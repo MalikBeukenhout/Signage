@@ -1,0 +1,16 @@
+[Unit]
+Description=LivingLab Signage Studio
+After=network.target
+
+[Service]
+Type=simple
+User=living
+WorkingDirectory=/home/living/signage-test
+ExecStart=/usr/bin/python3 /home/living/signage-test/server.py
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-/home/living/signage-test/.env
+
+[Install]
+WantedBy=multi-user.target
