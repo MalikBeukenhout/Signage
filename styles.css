@@ -1085,6 +1085,40 @@ h2 {
   font-size: clamp(16px, calc(var(--hex-w) * 0.03), 30px);
 }
 
+.time-expanded {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(12px, calc(var(--hex-w) * 0.028), 20px);
+  margin: 0 auto;
+  text-align: center;
+}
+
+.time-display {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.time-large {
+  font-size: clamp(36px, calc(var(--hex-w) * 0.11), 72px);
+  font-weight: 900;
+  line-height: 1;
+  font-family: monospace;
+  letter-spacing: 0.05em;
+}
+
+.time-date {
+  font-size: clamp(14px, calc(var(--hex-w) * 0.032), 26px);
+  font-weight: 600;
+  opacity: 0.8;
+  text-transform: capitalize;
+}
+
 .train-row,
 .weather-row {
   padding: clamp(4px, calc(var(--hex-w) * 0.01), 10px) clamp(6px, calc(var(--hex-w) * 0.014), 13px);

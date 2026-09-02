@@ -1117,11 +1117,26 @@ function expandedSpan(size) {
 
 function isHexExpanded(hex) {
   if (!hex.expanded || hex.kind === "empty") return false;
-  if (hex.expandMode !== "auto") return true;
-  const closed = Math.max(1, Number(hex.closedSeconds || 5));
-  const open = Math.max(1, Number(hex.expandedSeconds || 10));
-  const cycle = closed + open;
-  return Math.floor(Date.now() / 1000) % cycle >= closed;
+  if (hex.expandMode === "auto") {
+    const closed = Math.max(1, Number(hex.closedSeconds || 5));
+    const open = Math.max(1, Number(hex.expandedSeconds || 10));
+    const cycle = closed + open;
+    return Math.floor(Date.now() / 1000) % cycle >= closed;
+  }
+  if (hex.expandMode === "sequential") {
+    const allHexes = activeHexes().filter(h => h.expandMode === "sequential" && h.kind !== "empty");
+    if (!allHexes.length) return false;
+    const closed = Math.max(1, Number(hex.closedSeconds || 5));
+    const open = Math.max(1, Number(hex.expandedSeconds || 10));
+    const cycle = closed + open;
+    const totalCycle = allHexes.length * (closed + open);
+    const elapsed = Math.floor(Date.now() / 1000) % totalCycle;
+    const currentIndex = Math.floor(elapsed / (closed + open));
+    const hexIndex = allHexes.findIndex(h => h.id === hex.id);
+    if (currentIndex !== hexIndex) return false;
+    return (elapsed % (closed + open)) >= closed;
+  }
+  return true;
 }
 
 function timedIndex(length, seconds = 4) {
@@ -1138,6 +1153,7 @@ function hexContent(hex, isExpanded = isHexExpanded(hex)) {
   if (hex.kind === "trains") return trainHexContent(hex, isExpanded);
   if (hex.kind === "weather") return weatherHexContent(hex, isExpanded);
   if (hex.kind === "announcements") return announcementHexContent(hex, isExpanded);
+  if (hex.kind === "time") return timeHexContent(hex, isExpanded);
   return `${iconSvg(hex.icon)}<div class="hex-label">${escapeHtml(hex.label)}</div>`;
 }
 
@@ -1171,6 +1187,30 @@ function announcementHexRow(item) {
     <div class="announcement-hex-row">
       <strong>${escapeHtml(item.title)}</strong>
       <span>${escapeHtml(item.text)}</span>
+    </div>`;
+}
+
+function timeHexContent(hex, isExpanded) {
+  const now = new Date();
+  const timeFormatter = new Intl.DateTimeFormat("nl-NL", { timeZone: "Europe/Amsterdam", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+  const dateFormatter = new Intl.DateTimeFormat("nl-NL", { timeZone: "Europe/Amsterdam", weekday: "long", day: "2-digit", month: "long", year: "numeric" });
+  const timeStr = timeFormatter.format(now);
+  const dateStr = dateFormatter.format(now);
+  
+  if (!isExpanded) {
+    return `
+      ${iconSvg("clock")}
+      <div class="active-title">Tijd</div>
+      <div class="active-main">${timeStr.split(":").slice(0, 2).join(":")}</div>`;
+  }
+  
+  return `
+    <div class="time-expanded">
+      <div class="active-title compact-title">${escapeHtml(hex.label || "Huidige tijd")}</div>
+      <div class="active-detail time-display">
+        <div class="time-large">${timeStr}</div>
+        <div class="time-date">${dateStr}</div>
+      </div>
     </div>`;
 }
 
@@ -1432,7 +1472,7 @@ async function removeWidgetFromEditor(widgetId) {
 function renderHexSettings(hex) {
   addDragHint("Sleep de hexagon naar een rasterpositie.");
   addField("Label", "text", hex.label || "", (value) => hex.label = value);
-  addSelect("Type", hex.kind, [["pictogram", "Pictogram"], ["trains", "Treintijden"], ["weather", "Weer"], ["announcements", "Mededelingen"]], (value) => setHexKind(hex, value));
+  addSelect("Type", hex.kind, [["pictogram", "Pictogram"], ["trains", "Treintijden"], ["weather", "Weer"], ["announcements", "Mededelingen"], ["time", "Tijd & datum"]], (value) => setHexKind(hex, value));
   addField("Kleur", "color", hex.fill || activeGrid().fill, (value) => {
     hex.fill = value;
     hex.colorPreset = "";
@@ -1446,7 +1486,7 @@ function renderHexSettings(hex) {
   addCheckbox("Uitklappen", Boolean(hex.expanded), (value) => hex.expanded = value);
   addSelect("Uitklappen naar", hex.expandDirection || "right", [["right", "Rechts"], ["left", "Links"]], (value) => hex.expandDirection = value);
   addSelect("Uitklapformaat", hex.expandSize || "medium", [["small", "Klein"], ["medium", "Middel"], ["large", "Groot"], ["wide", "Breed"]], (value) => hex.expandSize = value);
-  addSelect("Uitklapgedrag", hex.expandMode || "manual", [["manual", "Altijd uitgeklapt"], ["auto", "Automatisch wisselen"]], (value) => hex.expandMode = value);
+  addSelect("Uitklapgedrag", hex.expandMode || "manual", [["manual", "Altijd uitgeklapt"], ["auto", "Automatisch wisselen"], ["sequential", "Een voor een"]], (value) => hex.expandMode = value);
   addField("Gesloten seconden", "number", hex.closedSeconds ?? 5, (value) => hex.closedSeconds = Number(value), { min: 1 });
   addField("Uitgeklapt seconden", "number", hex.expandedSeconds ?? 10, (value) => hex.expandedSeconds = Number(value), { min: 1 });
   if (hex.kind !== "trains" && hex.kind !== "weather") {
@@ -1473,18 +1513,20 @@ function renderHexSettings(hex) {
 
 function setHexKind(hex, kind) {
   hex.kind = kind;
-  const hasDefaultLabel = !hex.label || hex.label === "Nieuw" || hex.label === "Trein" || hex.label === "Weer" || hex.label === "Mededelingen";
+  const hasDefaultLabel = !hex.label || hex.label === "Nieuw" || hex.label === "Trein" || hex.label === "Weer" || hex.label === "Mededelingen" || hex.label === "Huidige tijd";
   if (hasDefaultLabel) {
     hex.label = {
       pictogram: "Nieuw",
       trains: "Trein",
       weather: "Weer",
       announcements: "Mededelingen",
+      time: "Huidige tijd",
     }[kind] || "Nieuw";
   }
   if (kind === "pictogram") hex.icon = hex.icon || "info";
   if (kind === "trains") hex.direction = "both";
   if (kind === "weather") hex.weatherMode = hex.weatherMode || "dayparts";
+  if (kind === "time") hex.expanded = true;
 }
 
 function addDragHint(text = "Sleep het geselecteerde onderdeel over het canvas.") {
@@ -1722,6 +1764,7 @@ function iconSvg(name) {
     bolt: `<div class="pictogram"><svg viewBox="0 0 100 100"><path d="M56 10L24 56h24l-6 34 34-50H52z" fill="${fill}"/></svg></div>`,
     gear: `<div class="pictogram"><svg viewBox="0 0 100 100"><path d="M50 18l8 8 12-2 6 10-8 10 2 6-2 6 8 10-6 10-12-2-8 8-8-8-12 2-6-10 8-10-2-6 2-6-8-10 6-10 12 2z" fill="${fill}"/><circle cx="50" cy="50" r="13" fill="#003b70"/></svg></div>`,
     book: `<div class="pictogram"><svg viewBox="0 0 100 100"><path d="M20 24h26a12 12 0 0 1 12 12v42a12 12 0 0 0-12-8H20zM80 24H58a12 12 0 0 0-12 12v42a12 12 0 0 1 12-8h22z" fill="${fill}"/></svg></div>`,
+    clock: `<div class="pictogram"><svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="32" fill="none" stroke="${stroke}" stroke-width="6"/><path d="M50 50v-18M50 50h16" stroke="${stroke}" stroke-width="6" stroke-linecap="round"/><circle cx="50" cy="50" r="4" fill="${fill}"/></svg></div>`,
   };
   return (icons[name] || icons.info).replaceAll("#003b70", "var(--hex-icon-cutout, #003b70)");
 }
